@@ -1,0 +1,549 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Claim Check Clock</title>
+<meta name="description" content="APM Lab: how long should an identity claim live before row filters re-check it? An inverse-CDF Monte Carlo decision prototype by Shriya Shekatkar.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Rubik:wght@500;800;900&family=Inter+Tight:wght@400;500;800&family=Patrick+Hand&family=IBM+Plex+Mono:wght@400;600&family=Fraunces:ital,wght@1,500&display=swap" rel="stylesheet">
+<style>
+:root{
+  /* hero: lotus collage pin */
+  --lotus:#E8508A; --blush:#F7B6CC; --petal:#FCE3EC; --pad:#4E7A3A; --pod:#9DB85A; --pond:#1B2620;
+  /* cards: pinback button pin */
+  --lav:#E9E7F7; --lime:#C5E88A; --limeInk:#3E6B25; --slate:#2C3A55; --ring:#0E0E10;
+  /* kpi: Result/PASS pin */
+  --paper:#FAFAF8; --ink:#111111; --mute:#5B5B5B;
+  /* sim room: dotwork flash pin */
+  --flash:#F4F3EF; --cobalt:#2F5BD3; --grid:#CFCDC6;
+  --fail:#C2185B; --ok:#2E6B1F;
+}
+*{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%}
+body{margin:0;background:var(--paper);color:var(--ink);font:16px/1.6 "Inter Tight",system-ui,sans-serif;overflow-x:hidden}
+a{color:inherit}
+.wrap{max-width:1120px;margin:0 auto;padding:0 20px}
+h2{font:800 clamp(28px,4.4vw,44px)/1.05 "Inter Tight",sans-serif;letter-spacing:-.02em;margin:0 0 8px}
+.kicker{font:500 13px/1 "IBM Plex Mono",monospace;letter-spacing:.12em;text-transform:uppercase;color:var(--mute);margin:0 0 10px}
+section{padding:64px 0}
+/* grain texture */
+.grain{position:relative;isolation:isolate}
+.grain::after{content:"";position:absolute;inset:0;pointer-events:none;z-index:3;opacity:.16;mix-blend-mode:multiply;
+ background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='160' height='160'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 .55 0'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>")}
+
+/* ===== HERO (lotus collage) ===== */
+.hero{background:var(--pond);color:#fff;padding:28px 0 40px}
+.collage{display:grid;grid-template-columns:repeat(4,1fr);grid-auto-rows:clamp(90px,14vw,150px);gap:6px;position:relative}
+.tile{border-radius:4px;overflow:hidden;position:relative}
+.tile svg{width:100%;height:100%;display:block}
+.t1{grid-column:1/3;grid-row:1/3}.t2{grid-column:3/4;grid-row:1/2}.t3{grid-column:4/5;grid-row:1/3}.t4{grid-column:3/4;grid-row:2/3}
+.t5{grid-column:1/2;grid-row:3/4}.t6{grid-column:2/4;grid-row:3/4}.t7{grid-column:4/5;grid-row:3/4}
+.sticker{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%) rotate(-3deg);z-index:4;text-align:center;width:min(92%,820px)}
+.sticker h1{margin:0;font:900 clamp(30px,6.4vw,72px)/.98 "Rubik",sans-serif;color:#fff;letter-spacing:-.01em;
+ -webkit-text-stroke:2px var(--pond);paint-order:stroke fill;text-shadow:0 4px 0 var(--lotus),0 6px 18px rgba(0,0,0,.45)}
+@media (max-width:520px){.sticker h1{-webkit-text-stroke:1.2px var(--pond)}}
+.hero-meta{display:flex;flex-wrap:wrap;gap:12px 28px;align-items:flex-end;justify-content:space-between;margin-top:22px}
+.hero-meta p{margin:0}
+.who{font:800 22px/1.1 "Rubik",sans-serif}
+.who small{display:block;font:500 13px/1.4 "IBM Plex Mono",monospace;color:var(--blush);margin-top:6px;letter-spacing:.04em}
+.launch{max-width:560px;font-size:15px;color:#F3EDEF}
+.launch a{color:var(--blush);font-weight:500}
+.pill{display:inline-block;background:var(--lotus);color:var(--pond);font:800 12px/1 "Rubik";padding:6px 10px;border-radius:999px;margin-right:6px;letter-spacing:.06em;text-transform:uppercase}
+
+/* ===== DECISION CARDS (pinback buttons) ===== */
+.decision{background:#141416}
+.decision h2,.decision .kicker{color:#fff}.decision .kicker{color:#C9C7D8}
+.masonry{columns:3 300px;column-gap:18px;margin-top:26px}
+.card{break-inside:avoid;margin:0 0 18px;background:var(--lav);color:var(--slate);border-radius:22px;padding:22px 22px 20px;position:relative;overflow:hidden;
+ box-shadow:inset 0 0 0 3px #fff,0 0 0 4px var(--ring)}
+.card::before{content:"";position:absolute;inset:-40% -20% auto auto;width:70%;height:90%;border-radius:50%;
+ background:radial-gradient(closest-side,rgba(255,255,255,.75),rgba(255,255,255,0));pointer-events:none}
+.card h3{font:400 26px/1.1 "Patrick Hand",cursive;margin:0 0 8px;color:var(--slate);position:relative}
+.card p,.card li{font-size:15px;position:relative}
+.card ul{padding-left:18px;margin:6px 0 0}
+.card .doodle{position:absolute;right:-14px;bottom:-14px;width:96px;opacity:.9}
+.cap{font:400 15px "Patrick Hand",cursive;color:#C9C7D8;margin-top:-6px}
+.guard{display:flex;justify-content:space-between;gap:8px;border-top:1.5px dashed #b6b3d4;padding:6px 0;font-size:14.5px;position:relative}
+.guard b{font:600 13px "IBM Plex Mono",monospace;white-space:nowrap}
+
+/* ===== SIM ROOM (dotwork flash) ===== */
+.room{background-color:var(--flash);
+ background-image:linear-gradient(var(--grid),var(--grid)),linear-gradient(var(--grid),var(--grid));
+ background-size:9px 1px,1px 9px;background-repeat:no-repeat;}
+.room{background:
+ url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='44' height='44'><path d='M22 18v8M18 22h8' stroke='%23C9C6BD' stroke-width='1.2'/></svg>") repeat,
+ radial-gradient(#DDDAD2 .8px,transparent 1.2px) 0 0/6px 6px,var(--flash)}
+.sig{font:500 italic 30px "Fraunces",serif;color:var(--ink);margin:0}
+.simgrid{display:grid;grid-template-columns:320px 1fr;gap:22px;margin-top:22px;align-items:start}
+@media (max-width:880px){.simgrid{grid-template-columns:1fr}}
+.controls{background:#fff;border:1.5px solid var(--ink);border-radius:6px;padding:18px;box-shadow:5px 5px 0 var(--cobalt)}
+.ctl{margin-bottom:14px}
+.ctl label{display:flex;justify-content:space-between;font:600 13px "IBM Plex Mono",monospace;gap:8px}
+.ctl output{color:var(--cobalt)}
+.ctl input[type=range]{width:100%;accent-color:var(--cobalt);margin:6px 0 0}
+.ctl .hint{font-size:12.5px;color:var(--mute);line-height:1.35;margin-top:2px}
+.toggle{display:flex;align-items:center;gap:10px;font:600 13px "IBM Plex Mono",monospace;cursor:pointer}
+.toggle input{width:20px;height:20px;accent-color:var(--cobalt)}
+.btnrow{display:flex;gap:10px;flex-wrap:wrap;margin-top:8px}
+.pinbtn{appearance:none;border:0;cursor:pointer;width:84px;height:84px;border-radius:50%;background:radial-gradient(circle at 34% 28%,#fff 0 8%,var(--lav) 30%,#d3d0ec 100%);
+ box-shadow:0 0 0 3px #fff,0 0 0 6px var(--ring),0 6px 0 6px #000;color:var(--slate);font:400 17px/1.05 "Patrick Hand",cursive;padding:8px;transition:transform .15s}
+.pinbtn:hover{transform:translateY(-2px) rotate(-4deg)}
+.pinbtn:focus-visible{outline:3px solid var(--cobalt);outline-offset:8px}
+.pinbtn.lime{background:radial-gradient(circle at 34% 28%,#fff 0 8%,var(--lime) 34%,#a9d065 100%);color:#1f3a10}
+.stage{background:#fff;border:1.5px solid var(--ink);border-radius:6px;padding:14px;min-width:0}
+.stage h4{font:600 13px "IBM Plex Mono",monospace;margin:0 0 6px;display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap}
+canvas{width:100%;display:block;border-radius:3px}
+.legend{display:flex;flex-wrap:wrap;gap:6px 16px;font-size:12.5px;color:#333;margin-top:6px}
+.legend i{display:inline-block;width:10px;height:10px;border-radius:50%;vertical-align:-1px;margin-right:5px}
+/* KPI badges: Result / PASS */
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:12px;margin-top:18px}
+.kpi{background:#fff;border:1px solid #E3E3E0;padding:16px 16px 14px;border-radius:2px;min-width:0}
+.kpi .lbl{font:500 12px/1.3 "IBM Plex Mono",monospace;color:var(--mute);min-height:32px}
+.kpi .val{font:800 clamp(30px,3.6vw,42px)/1 "Inter Tight",sans-serif;letter-spacing:-.03em;margin:10px 0 14px;overflow-wrap:anywhere}
+.kpi .res{font:400 clamp(24px,2.8vw,32px)/1 "Inter Tight",sans-serif;letter-spacing:.02em}
+.kpi .res.pass{color:var(--ok)}.kpi .res.fail{color:var(--fail)}
+.kpi .th{font-size:12px;color:var(--mute);margin-top:6px}
+.sweep{margin-top:18px;background:#fff;border:1.5px solid var(--ink);border-radius:6px;padding:14px;overflow-x:auto}
+.sweep table{border-collapse:collapse;width:100%;min-width:560px;font:13px "IBM Plex Mono",monospace}
+.sweep th,.sweep td{white-space:nowrap;padding:6px 8px;text-align:right;border-bottom:1px dotted #bbb}
+.sweep th:first-child,.sweep td:first-child{text-align:left}
+.sweep tr.best td{background:#E7EEFF;font-weight:600}
+.dotok{color:var(--ok)}.dotbad{color:var(--fail)}
+
+/* ===== MEMO ===== */
+.memo{background:var(--petal)}
+.memo-paper{background:#fff;border-radius:4px;padding:clamp(18px,4vw,40px);box-shadow:0 0 0 2px var(--ink),8px 8px 0 var(--lotus);max-width:860px}
+.memo-paper h3{font:800 14px "IBM Plex Mono",monospace;letter-spacing:.1em;text-transform:uppercase;margin:22px 0 6px;color:#8A1F4A}
+.memo-paper p{margin:0 0 8px}
+.vp{margin-top:22px;background:var(--pond);color:#fff;padding:18px 20px;border-radius:4px;font:800 clamp(18px,2.4vw,22px)/1.3 "Rubik",sans-serif}
+.vp small{display:block;font:500 12px "IBM Plex Mono",monospace;color:var(--blush);margin-bottom:6px;letter-spacing:.1em}
+
+/* ===== MATH ===== */
+.math{background:#fff}
+.two{display:grid;grid-template-columns:1.1fr .9fr;gap:28px;align-items:start}
+@media (max-width:820px){.two{grid-template-columns:1fr}}
+.formula{font:600 15px "IBM Plex Mono",monospace;background:var(--flash);border-left:4px solid var(--cobalt);padding:10px 14px;margin:12px 0;overflow-x:auto}
+#icdf{width:100%;height:auto;background:var(--flash);border:1.5px solid var(--ink);border-radius:6px}
+
+/* ===== CODE ===== */
+.code{background:#141416;color:#EDEDED}
+.code h2{color:#fff}.code .kicker{color:#C9C7D8}
+pre{background:#0B0B0C;color:#E9E7F7;border-radius:6px;padding:16px;overflow-x:auto;font:13px/1.55 "IBM Plex Mono",monospace;border:1px solid #333;margin:10px 0 22px}
+.code h3{font:400 24px "Patrick Hand",cursive;color:var(--lime);margin:22px 0 0}
+.code p{color:#D4D2E2}
+
+/* ===== FOOTER ===== */
+footer{background:var(--pond);color:#EFE9EC;padding:34px 0 40px;font-size:14px}
+footer a{color:var(--blush)}
+.credits{font-size:11px;color:#B9C2BC;margin-top:14px;line-height:1.6}
+.credits a{color:#D9DFDB}
+.vh{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}
+@media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+</style>
+</head>
+<body>
+
+<header class="hero grain" aria-labelledby="hl">
+  <div class="wrap">
+    <div class="collage" aria-hidden="false">
+      <div class="tile t1"><svg viewBox="0 0 200 200" preserveAspectRatio="xMidYMid slice" role="img" aria-label="Drawn pink lotus bloom over dark water"><rect width="200" height="200" fill="#26352B"/><g id="lotusBig"></g></svg></div>
+      <div class="tile t2"><svg viewBox="0 0 100 100" preserveAspectRatio="xMidYMid slice" aria-hidden="true"><rect width="100" height="100" fill="#F7B6CC"/><g class="buds"></g></svg></div>
+      <div class="tile t3"><svg viewBox="0 0 100 200" preserveAspectRatio="xMidYMid slice" aria-hidden="true"><rect width="100" height="200" fill="#E8508A"/><g class="halftone"></g></svg></div>
+      <div class="tile t4"><svg viewBox="0 0 100 100" preserveAspectRatio="xMidYMid slice" aria-hidden="true"><rect width="100" height="100" fill="#4E7A3A"/><g class="pod"></g></svg></div>
+      <div class="tile t5"><svg viewBox="0 0 100 100" preserveAspectRatio="xMidYMid slice" aria-hidden="true"><rect width="100" height="100" fill="#FCE3EC"/><g class="buds2"></g></svg></div>
+      <div class="tile t6"><svg viewBox="0 0 200 100" preserveAspectRatio="xMidYMid slice" aria-hidden="true"><rect width="200" height="100" fill="#1F2E25"/><g class="pads"></g></svg></div>
+      <div class="tile t7"><svg viewBox="0 0 100 100" preserveAspectRatio="xMidYMid slice" aria-hidden="true"><rect width="100" height="100" fill="#9DB85A"/><g class="clock"></g></svg></div>
+      <div class="sticker"><h1 id="hl">I enforce access at the speed of change.</h1></div>
+    </div>
+    <div class="hero-meta">
+      <p class="who">Shriya Shekatkar<small>UCLA · Stats 102C Monte Carlo Methods · APM Lab</small></p>
+      <p class="launch"><span class="pill">Mirrors</span>Databricks release note, Oct 19 2026: <a href="https://docs.databricks.com/aws/en/release-notes/product/2026/october" target="_blank" rel="noopener">filter data per end user with OAuth custom identity claims</a>. One service principal, many end users, row filters keyed on a claim in the token.</p>
+    </div>
+  </div>
+</header>
+
+<main>
+<section class="decision" aria-labelledby="d-h">
+  <div class="wrap">
+    <p class="kicker">01 · The decision</p>
+    <h2 id="d-h">How long should a claim live before the row filter checks again?</h2>
+    <p class="cap">pinned as a board: problem, change, metric, guardrails, people</p>
+    <div class="masonry">
+      <article class="card">
+        <h3>Customer problem</h3>
+        <p>An app builder serves 12,000 analysts through one service principal. A custom claim on its token (say <code>region=EMEA</code>) decides which rows each person sees. When someone is offboarded or moved to another team, the old claim keeps working until the token is replaced. Security teams ask: <em>how many rows leak in that gap?</em></p>
+        <svg class="doodle" viewBox="0 0 100 100" aria-hidden="true"><path d="M20 70c10-30 30-40 50-30s20 30 0 40-40 0-50-10z" fill="#C5E88A" stroke="#3E6B25" stroke-width="2.5"/><path d="M40 52c4-3 10-2 12 2M58 62c3 0 6 3 5 6" stroke="#3E6B25" stroke-width="2.5" fill="none" stroke-linecap="round"/></svg>
+      </article>
+      <article class="card">
+        <h3>Proposed change</h3>
+        <p>As the PM for claim-based filtering in Unity Catalog, I would ship a recommended default for <b>claim lifetime (TTL)</b> in the app template, paired with an optional <b>push revocation</b> hook that kills a user's token as soon as their entitlement changes.</p>
+        <p>The hard part: shorter TTLs close the gap but multiply token mints, identity-provider load and refresh errors.</p>
+      </article>
+      <article class="card">
+        <h3>Success metric</h3>
+        <p><b>P99 time-to-enforce</b>: minutes between an access-removal event and the moment the filter stops serving old rows. Target ≤ 30 min. I use the 99th percentile on purpose: the median is set by the push hook, the tail is set by the TTL.</p>
+        <p>Adoption follows trust: % of multi-user apps on claim filtering at 90 days.</p>
+      </article>
+      <article class="card">
+        <h3>Guardrails</h3>
+        <div class="guard"><span>Removals with ≥1 stale read of sensitive rows</span><b>≤ 2%</b></div>
+        <div class="guard"><span>P99 time-to-enforce</span><b>≤ 30 min</b></div>
+        <div class="guard"><span>Peak token mints per second (fleet)</span><b>≤ 25/s</b></div>
+        <div class="guard"><span>Refresh errors users see per day</span><b>≤ 20</b></div>
+      </article>
+      <article class="card">
+        <h3>Stakeholders</h3>
+        <ul>
+          <li>App builders and data engineers (own the service principal)</li>
+          <li>Security and compliance (own the leak budget)</li>
+          <li>Identity team (owns token mint capacity)</li>
+          <li>Unity Catalog governance PM and eng (own filters and ABAC)</li>
+          <li>Support (absorbs "my dashboard broke" tickets)</li>
+        </ul>
+      </article>
+    </div>
+  </div>
+</section>
+
+<section class="room" id="sim" aria-labelledby="s-h">
+  <div class="wrap">
+    <p class="kicker">02 · Simulation room</p>
+    <h2 id="s-h">Every dot is one query that arrived before the claim died.</h2>
+    <p class="sig">simulation room</p>
+    <div class="simgrid">
+      <div class="controls" role="group" aria-label="Simulation controls">
+        <div class="ctl"><label for="ttl">Claim TTL <output id="ttlO">60 min</output></label><input id="ttl" type="range" min="5" max="120" step="5" value="60"><div class="hint">How long a minted token, and its claim, stays valid.</div></div>
+        <div class="ctl"><label class="toggle"><input id="push" type="checkbox"> Push revocation hook</label><div class="hint">On an entitlement change, revoke the user's token early.</div></div>
+        <div class="ctl"><label for="q">Push reliability <output id="qO">90%</output></label><input id="q" type="range" min="50" max="100" step="1" value="90"><div class="hint">Share of removals where the hook fires (mean delay 10 s).</div></div>
+        <div class="ctl"><label for="r">Queries per active hour <output id="rO">20</output></label><input id="r" type="range" min="2" max="60" step="1" value="20"></div>
+        <div class="ctl"><label for="pf">Mint failure rate <output id="pfO">4 / 100k</output></label><input id="pf" type="range" min="1" max="20" step="1" value="4"><div class="hint">Chance a single token refresh errors out for the user.</div></div>
+        <div class="ctl"><label for="seed">Seed <output id="seedO">102</output></label><input id="seed" type="range" min="1" max="999" step="1" value="102"></div>
+        <div class="btnrow">
+          <button class="pinbtn" id="rerun" type="button">re-roll the dice</button>
+          <button class="pinbtn lime" id="best" type="button">pick my TTL</button>
+        </div>
+      </div>
+      <div class="stage">
+        <h4><span>24 sampled removals (user active at the time)</span><span id="nlab">N = 4,000 simulated</span></h4>
+        <canvas id="lanes" height="380" aria-label="Timeline lanes: each row is one removal; bars show how long the old claim stayed valid; dots are queries"></canvas>
+        <div class="legend"><span><i style="background:#cfcbc0"></i>time left on token</span><span><i style="background:#2F5BD3"></i>actual exposure window</span><span><i style="background:#111"></i>stale query</span><span><i style="background:#C2185B"></i>stale query on sensitive rows</span></div>
+        <h4 style="margin-top:14px"><span>Exposure window, all removals (dot plot)</span><span id="hlab"></span></h4>
+        <canvas id="hist" height="170" aria-label="Dot plot of exposure windows in minutes"></canvas>
+      </div>
+    </div>
+    <div class="kpis" aria-live="polite">
+      <div class="kpi"><div class="lbl">Stale sensitive read rate</div><div class="val" id="k1">–</div><div class="res" id="k1r">–</div><div class="th">guardrail ≤ 2% of removals</div></div>
+      <div class="kpi"><div class="lbl">P99 time-to-enforce</div><div class="val" id="k2">–</div><div class="res" id="k2r">–</div><div class="th">target ≤ 30 min</div></div>
+      <div class="kpi"><div class="lbl">Peak token mints</div><div class="val" id="k3">–</div><div class="res" id="k3r">–</div><div class="th">guardrail ≤ 25 per second</div></div>
+      <div class="kpi"><div class="lbl">Refresh errors per day</div><div class="val" id="k4">–</div><div class="res" id="k4r">–</div><div class="th">guardrail ≤ 20</div></div>
+    </div>
+    <div class="sweep">
+      <h4 style="font:600 13px 'IBM Plex Mono',monospace;margin:0 0 8px">TTL sweep at current settings (1,500 removals per TTL, same seed)</h4>
+      <table><thead><tr><th>TTL</th><th>stale sensitive</th><th>P99 enforce</th><th>peak mints/s</th><th>errors/day</th><th>all guardrails</th></tr></thead><tbody id="sweepBody"></tbody></table>
+    </div>
+  </div>
+</section>
+
+<section class="memo" aria-labelledby="m-h">
+  <div class="wrap">
+    <p class="kicker">03 · Director memo (rewrites itself)</p>
+    <h2 id="m-h">Memo: claim lifetime default</h2>
+    <div class="memo-paper" id="memo" aria-live="polite"></div>
+  </div>
+</section>
+
+<section class="math" aria-labelledby="x-h">
+  <div class="wrap two">
+    <div>
+      <p class="kicker">04 · The math, from my Monte Carlo course</p>
+      <h2 id="x-h">Inverse CDF: turn one uniform number into any waiting time.</h2>
+      <p>A computer hands you uniform numbers U between 0 and 1. If you want a draw from some other distribution with CDF F, you flip the CDF around: X = F⁻¹(U). Small U values land where F climbs slowly, large ones where it is nearly flat, so the draws pile up exactly where the distribution has its mass.</p>
+      <p><b>Waiting times between queries.</b> If an analyst fires queries at rate λ per minute, the gap until the next one is exponential, F(x) = 1 − e^(−λx). Solve for x:</p>
+      <div class="formula">gap = −ln(1 − U) / λ &nbsp;≡&nbsp; −ln(U) / λ</div>
+      <p><b>Time left on a token.</b> A removal lands at a random point in a token's life, so the time left is uniform on [0, TTL]: F⁻¹(U) = U·TTL.</p>
+      <p><b>Which kind of removal.</b> Offboarding, team move and role downgrade are a finite discrete variable. I split [0,1] into pieces of length 0.25, 0.45 and 0.30 and see which piece U falls in.</p>
+      <p><b>When does a refresh first fail?</b> If each mint fails with tiny probability p, the number of mints until the first failure is geometric: ⌈ln U / ln(1 − p)⌉. Jumping straight from failure to failure lets me simulate a million mints a day in about twenty steps.</p>
+      <p>The product lesson: four inverse-CDF draws per removal give me a full distribution of leak risk, not a single average. The average hides the long uniform tail that only push revocation can cut.</p>
+    </div>
+    <div>
+      <svg id="icdf" viewBox="0 0 320 300" role="img" aria-label="Inverse CDF of an exponential: uniform values on the vertical axis map to waiting times on the horizontal axis"></svg>
+      <p style="font-size:13px;color:var(--mute)">Dots start on the U axis and slide across to the curve, then drop to the waiting time they become. Rate λ follows the "queries per active hour" slider.</p>
+    </div>
+  </div>
+</section>
+
+<section class="code" aria-labelledby="c-h">
+  <div class="wrap">
+    <p class="kicker">05 · How I'd run it on real data</p>
+    <h2 id="c-h">Swap the assumptions for logs.</h2>
+    <p>Table names below are illustrative. The idea: measure the real exposure window from audit-style events, then fit the rates the simulation assumes.</p>
+    <h3>1 · Measure the exposure window (SQL)</h3>
+<pre><code>-- every access removal, the last token minted before it,
+-- and queries served with the old claim after it
+WITH removals AS (
+  SELECT user_id, changed_at, change_type
+  FROM   apm_lab.governance.entitlement_changes
+  WHERE  direction = 'remove'
+    AND  changed_at &gt;= current_date() - INTERVAL 30 DAYS
+),
+live_token AS (
+  SELECT r.*, t.token_id, t.expires_at
+  FROM   removals r
+  JOIN   apm_lab.identity.token_mints t
+    ON   t.user_id = r.user_id
+   AND   r.changed_at BETWEEN t.minted_at AND t.expires_at
+)
+SELECT change_type,
+       percentile_approx(timestampdiff(SECOND, changed_at, expires_at) / 60.0, 0.99) AS p99_window_min,
+       avg(CASE WHEN stale_sensitive &gt; 0 THEN 1.0 ELSE 0 END)                     AS stale_sensitive_rate
+FROM (
+  SELECT l.change_type, l.changed_at, l.expires_at,
+         count_if(q.touches_sensitive) AS stale_sensitive
+  FROM   live_token l
+  LEFT JOIN apm_lab.apps.query_log q
+    ON   q.token_id = l.token_id AND q.ts &gt; l.changed_at
+  GROUP BY ALL
+)
+GROUP BY change_type;</code></pre>
+    <h3>2 · Re-run the inverse-CDF simulation with fitted rates (Python)</h3>
+<pre><code>import numpy as np
+
+rng = np.random.default_rng(102)
+lam = spark.table("apm_lab.apps.query_log").groupBy("user_id") \
+           .count().toPandas()["count"].mean() / (30 * 8 * 60)   # queries per active minute
+
+def exposure(ttl, n=50_000, push=True, q=0.95, delay_min=10/60):
+    u = rng.random((n, 3))
+    left = u[:, 0] * ttl                              # uniform inverse CDF
+    killed = push &amp; (u[:, 1] &lt; q)
+    early = -np.log(u[:, 2]) * delay_min              # exponential inverse CDF
+    return np.where(killed, np.minimum(left, early), left)
+
+for ttl in (10, 15, 30, 60):
+    w = exposure(ttl)
+    p_hit = 1 - np.exp(-lam * 0.32 * w)               # P(at least one sensitive query)
+    print(ttl, np.percentile(w, 99).round(1), (0.35 * p_hit).mean().round(4))</code></pre>
+  </div>
+</section>
+</main>
+
+<footer>
+  <div class="wrap">
+    <p><b>Unofficial concept prototype by Shriya Shekatkar. All data is simulated. Not affiliated with any company.</b></p>
+    <p>Part of <a href="https://shriyashekatkar25-byte.github.io/apm-lab/">APM Lab, the gallery</a> · product decisions with Monte Carlo methods.</p>
+    <p class="credits">Design inspired by:
+      <a href="https://www.pinterest.com/pin/1091560028460498938/" target="_blank" rel="noopener">"I hope every lotus girly finds this" by Avaniie</a> ·
+      <a href="https://www.pinterest.com/pin/921197298819669380/" target="_blank" rel="noopener">pinback button pin by gabriela</a> ·
+      <a href="https://www.pinterest.com/pin/682576887316118515/" target="_blank" rel="noopener">"Manifesting ✨" by Lois</a> ·
+      <a href="https://www.pinterest.com/pin/934285885215735039/" target="_blank" rel="noopener">"Everything starts with a DOT" flash by dear_hitz</a>.
+      All artwork redrawn in SVG/CSS/canvas; no pin images used.</p>
+  </div>
+</footer>
+
+<script>
+(function(){
+"use strict";
+const reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+const NS='http://www.w3.org/2000/svg';
+function el(tag,attrs,parent){const e=document.createElementNS(NS,tag);for(const k in attrs)e.setAttribute(k,attrs[k]);if(parent)parent.appendChild(e);return e;}
+
+/* ---------- seeded RNG (mulberry32) ---------- */
+function mulberry32(a){return function(){a|=0;a=a+0x6D2B79F5|0;let t=Math.imul(a^a>>>15,1|a);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296;};}
+function U(rng){let u=rng();return u<=1e-12?1e-12:u;}
+
+/* ---------- hero drawings ---------- */
+function lotus(g,cx,cy,s,col1,col2){
+  const petals=[[-60,1],[-35,1.05],[-12,1.1],[12,1.1],[35,1.05],[60,1],[0,1.18]];
+  petals.forEach(([ang,len],i)=>{
+    const p=el('path',{d:`M0 0 C ${-14*s} ${-20*s} ${-12*s} ${-48*s*len} 0 ${-60*s*len} C ${12*s} ${-48*s*len} ${14*s} ${-20*s} 0 0Z`,
+      fill:i%2?col1:col2,stroke:'#9E2A57','stroke-width':1.2*s,transform:`translate(${cx} ${cy}) rotate(${ang})`},g);
+  });
+  el('ellipse',{cx,cy:cy-4*s,rx:12*s,ry:6*s,fill:'#C9D86A',stroke:'#4E7A3A','stroke-width':s},g);
+}
+const big=document.getElementById('lotusBig');
+for(let i=0;i<30;i++){el('circle',{cx:(i*37)%200,cy:150+(i*13)%50,r:2+(i%4),fill:'#3A4E40'},big);}
+el('ellipse',{cx:60,cy:175,rx:58,ry:14,fill:'#4E7A3A'},big);el('ellipse',{cx:160,cy:182,rx:44,ry:10,fill:'#5E8C44'},big);
+el('path',{d:'M100 190 C 98 160 104 140 100 120',stroke:'#4E7A3A','stroke-width':5,fill:'none'},big);
+lotus(big,100,122,1.45,'#E8508A','#F48FB5');
+document.querySelectorAll('.buds,.buds2').forEach((g,k)=>{for(let i=0;i<5;i++){const x=12+i*19,y=60+((i*17+k*9)%30);
+  el('path',{d:`M${x} ${y+40} L${x} ${y}`,stroke:'#4E7A3A','stroke-width':2.4},g);
+  el('path',{d:`M${x} ${y} c-9 -6 -7 -22 0 -28 c7 6 9 22 0 28z`,fill:k?'#E8508A':'#fff',stroke:'#9E2A57','stroke-width':1.2},g);}});
+document.querySelectorAll('.halftone').forEach(g=>{for(let y=4;y<200;y+=8)for(let x=4;x<100;x+=8){const r=1+2.6*Math.abs(Math.sin((x+y)/30));el('circle',{cx:x,cy:y,r:r.toFixed(2),fill:'#F7B6CC',opacity:.85},g);}
+  lotus(g,50,120,0.75,'#FCE3EC','#fff');});
+document.querySelectorAll('.pod').forEach(g=>{el('circle',{cx:50,cy:50,r:34,fill:'#C9D86A',stroke:'#2E4A22','stroke-width':3},g);
+  for(let i=0;i<9;i++){const a=i/9*Math.PI*2;el('circle',{cx:50+18*Math.cos(a),cy:50+18*Math.sin(a),r:4.5,fill:'#2E4A22'},g);}el('circle',{cx:50,cy:50,r:4.5,fill:'#2E4A22'},g);});
+document.querySelectorAll('.pads').forEach(g=>{[[30,60,26],[90,40,20],[150,66,30],[185,30,14]].forEach(([x,y,r])=>{el('path',{d:`M${x} ${y} L${x+r} ${y-4} A${r} ${r*.55} 0 1 1 ${x+r*.9} ${y+6} Z`,fill:'#4E7A3A',stroke:'#9DB85A','stroke-width':1.5},g);});
+  lotus(g,90,52,.45,'#E8508A','#F7B6CC');});
+const clockG=document.querySelector('.clock');el('circle',{cx:50,cy:50,r:30,fill:'#FCE3EC',stroke:'#1B2620','stroke-width':3},clockG);
+for(let i=0;i<12;i++){const a=i/12*Math.PI*2;el('line',{x1:50+24*Math.cos(a),y1:50+24*Math.sin(a),x2:50+28*Math.cos(a),y2:50+28*Math.sin(a),stroke:'#1B2620','stroke-width':2},clockG);}
+const hand=el('line',{x1:50,y1:50,x2:50,y2:28,stroke:'#E8508A','stroke-width':4,'stroke-linecap':'round'},clockG);
+el('circle',{cx:50,cy:50,r:3.5,fill:'#1B2620'},clockG);
+if(!reduce){let ang=0;setInterval(()=>{ang=(ang+6)%360;hand.setAttribute('transform',`rotate(${ang} 50 50)`);},250);}
+
+/* ---------- model ---------- */
+const TYPES=[{name:'offboarding',p:.25,s:.60},{name:'team or region move',p:.45,s:.30},{name:'role downgrade',p:.30,s:.25}];
+const CUM=TYPES.reduce((a,t,i)=>{a.push((a[i-1]||0)+t.p);return a;},[]);
+const FIXED={active:.35,pushDelayMin:10/60,dau:12000,hours:8,peak:1.5};
+
+function simulate(P,N,seed,keepLanes){
+  const rng=mulberry32(seed*7919+13);
+  const lam=P.r/60;               // queries per minute while active
+  const win=new Float64Array(N);let staleSens=0,staleAll=0;const lanes=[];
+  for(let i=0;i<N;i++){
+    const u1=U(rng);let k=0;while(u1>CUM[k])k++;          // discrete inverse CDF
+    const left=U(rng)*P.ttl;                               // uniform inverse CDF
+    let w=left,pushed=false;
+    if(P.push && U(rng)<P.q){const d=-Math.log(U(rng))*FIXED.pushDelayMin;if(d<w){w=d;pushed=true;}} // exponential
+    const active=U(rng)<FIXED.active;
+    let t=0,c=0,sens=0;const pts=[];
+    if(active){for(;;){t+=-Math.log(U(rng))/lam;if(t>w)break;c++;const isS=U(rng)<TYPES[k].s;if(isS)sens++;if(keepLanes&&lanes.length<24)pts.push([t,isS]);}}
+    win[i]=w;staleAll+=c;if(sens>0)staleSens++;
+    if(keepLanes&&active&&lanes.length<24)lanes.push({left,w,pts,type:TYPES[k].name,active,pushed});
+  }
+  const sorted=Array.from(win).sort((a,b)=>a-b);
+  const p90=sorted[Math.floor(.99*(N-1))];
+  const mints=FIXED.dau*FIXED.hours*60/P.ttl;
+  const peak=mints/(FIXED.hours*3600)*FIXED.peak;
+  // geometric inverse CDF: jump from one failed mint to the next
+  const p=P.pf/1e5;let pos=0,errs=0;const r2=mulberry32(seed*31+7);
+  for(;;){pos+=Math.ceil(Math.log(U(r2))/Math.log(1-p));if(pos>mints)break;errs++;}
+  return {win,sorted,p90,rate:staleSens/N,meanStale:staleAll/N,peak,mints,errs,lanes,mean:sorted.reduce((a,b)=>a+b,0)/N};
+}
+const G={rate:.02,p90:30,peak:25,errs:20};
+function checks(o){return {rate:o.rate<=G.rate,p90:o.p90<=G.p90,peak:o.peak<=G.peak,errs:o.errs<=G.errs};}
+const allPass=c=>c.rate&&c.p90&&c.peak&&c.errs;
+
+/* ---------- UI ---------- */
+const $=id=>document.getElementById(id);
+function params(){return{ttl:+$('ttl').value,push:$('push').checked,q:+$('q').value/100,r:+$('r').value,pf:+$('pf').value,seed:+$('seed').value};}
+const fmtPct=x=>(x*100).toFixed(x<.1?1:0)+'%';
+const fmtMin=x=>x<1?(x*60).toFixed(0)+' s':x.toFixed(1)+' min';
+let state=null,anim=null;
+const TTLS=[5,10,15,20,30,45,60,90,120];
+
+function run(){
+  const P=params();
+  $('ttlO').textContent=P.ttl+' min';$('qO').textContent=Math.round(P.q*100)+'%';$('rO').textContent=P.r;$('pfO').textContent=P.pf+' / 100k';$('seedO').textContent=P.seed;
+  $('q').disabled=!P.push;
+  const o=simulate(P,4000,P.seed,true);const c=checks(o);
+  setK('k1',fmtPct(o.rate),c.rate);setK('k2',fmtMin(o.p90),c.p90);setK('k3',o.peak.toFixed(1)+'/s',c.peak);setK('k4',o.errs,c.errs);
+  // sweep
+  const rows=TTLS.map(t=>{const s=simulate(Object.assign({},P,{ttl:t}),1500,P.seed,false);return{t,s,c:checks(s)};});
+  const passing=rows.filter(x=>allPass(x.c));const best=passing.length?passing[passing.length-1]:null;
+  $('sweepBody').innerHTML=rows.map(x=>`<tr class="${best&&x.t===best.t?'best':''}"><td>${x.t} min</td><td class="${x.c.rate?'dotok':'dotbad'}">${fmtPct(x.s.rate)}</td><td class="${x.c.p90?'dotok':'dotbad'}">${fmtMin(x.s.p90)}</td><td class="${x.c.peak?'dotok':'dotbad'}">${x.s.peak.toFixed(1)}</td><td class="${x.c.errs?'dotok':'dotbad'}">${x.s.errs}</td><td>${allPass(x.c)?'<span class="dotok">PASS</span>':'<span class="dotbad">FAIL</span>'}</td></tr>`).join('');
+  state={P,o,c,best,rows};
+  memo();drawHist();startLanes();drawICDF();
+}
+function setK(id,v,ok){$(id).textContent=v;const r=$(id+'r');r.textContent=ok?'PASS':'FAIL';r.className='res '+(ok?'pass':'fail');}
+
+/* ---------- memo ---------- */
+function memo(){
+  const {P,o,c,best,rows}=state;const ok=allPass(c);
+  const failing=Object.entries(c).filter(([k,v])=>!v).map(([k])=>({rate:'stale sensitive reads',p90:'P99 time-to-enforce',peak:'token mint load',errs:'refresh errors'})[k]);
+  let decision,next,vp;
+  const noPush=simulate(Object.assign({},P,{push:false,ttl:15}),1500,P.seed,false);
+  if(ok){
+    decision=`Ship a ${P.ttl}-minute claim TTL as the template default${P.push?` with the push revocation hook on (assumes ${Math.round(P.q*100)}% hook reliability)`:''}. All four guardrails pass.`;
+  }else if(best){
+    decision=`Do not ship ${P.ttl} minutes. The sweep says the longest TTL that clears every guardrail is <b>${best.t} minutes</b>${P.push?' with push revocation on':''}. Default to that; it closes the leak gap at the lowest mint load.`;
+  }else{
+    decision=P.push?`No TTL clears every guardrail at ${Math.round(P.q*100)}% hook reliability. Hold the default and invest in hook reliability first; short TTLs alone break the identity team's capacity before they fix the leak.`
+      :`No TTL clears every guardrail without push revocation. Short TTLs fix the leak only by melting the token service. Ship the push revocation hook first, then set the TTL.`;
+  }
+  const evidence=`Across 4,000 simulated access removals (seed ${P.seed}), ${fmtPct(o.rate)} had at least one stale read of sensitive rows and the P99 time-to-enforce was ${fmtMin(o.p90)} (mean ${fmtMin(o.mean)}). At ${P.ttl} min the fleet mints ${Math.round(o.mints).toLocaleString()} tokens a day, peaking at ${o.peak.toFixed(1)} per second, with ${o.errs} refresh errors users would see. Without the hook, even a 15-minute TTL leaves ${fmtPct(noPush.rate)} of removals with a sensitive stale read.`;
+  const risks=[
+    failing.length?`Currently failing: ${failing.join(', ')}.`:'No guardrail is failing at these settings; the biggest risk is that the assumptions are wrong.',
+    'The model assumes a removal lands at a uniformly random point in a token\'s life. If HR batch jobs fire right after apps refresh tokens, windows run longer than modeled.',
+    'Hook reliability is the swing variable: every point lost moves removals from a 10-second window to a full uniform window.',
+    'Query rates are assumed steady within an hour; bursty dashboard refreshes would raise stale reads.'];
+  const plan=`Roll out behind a workspace flag: 5% of multi-user apps for two weeks with the TTL in the template${P.push?' and the push hook on':''}. Log every removal-to-expiry gap. Expand to 50% only if measured P99 time-to-enforce ≤ ${G.p90} min and mint peak ≤ ${G.peak}/s; kill switch reverts the template to the previous default.`;
+  next=best?`Pair with the identity team on a ${best.t}-minute default load test, and with security on whether a ${fmtPct(G.rate)} leak budget is the right line.`:`Write the one-pager for push revocation reliability (target ≥ 95%), owned jointly with the identity team.`;
+  vp=ok||best?`A ${(ok?P.ttl:best.t)}-minute claim lifetime${P.push?' plus push revocation':''} keeps removed users from seeing sensitive rows in ${ok?(100-o.rate*100).toFixed(1):(100-best.s.rate*100).toFixed(1)}% of cases without overloading the token service.`
+     :`Shorter tokens alone cannot make claim filtering safe; we need push revocation before we pick a number.`;
+  $('memo').innerHTML=`<p><b>To:</b> Director, Data Governance · <b>From:</b> Shriya Shekatkar, APM · <b>Re:</b> default claim TTL for per-end-user filtering</p>
+  <h3>Decision</h3><p>${decision}</p>
+  <h3>Evidence</h3><p>${evidence}</p>
+  <h3>Risks</h3><p>${risks.map(r=>'• '+r).join('<br>')}</p>
+  <h3>Rollout plan</h3><p>${plan}</p>
+  <h3>Next step</h3><p>${next}</p>
+  <div class="vp"><small>WHAT I'D TELL THE VP IN ONE SENTENCE</small>${vp}</div>`;
+}
+
+/* ---------- canvases ---------- */
+function fit(cv){const dpr=Math.min(window.devicePixelRatio||1,2);const w=cv.clientWidth;const h=+cv.getAttribute('height');cv.width=w*dpr;cv.height=h*dpr;cv.style.height=h+'px';const x=cv.getContext('2d');x.setTransform(dpr,0,0,dpr,0,0);return{x,w,h};}
+function sparkle(x,cx,cy,r,col){x.fillStyle=col;x.beginPath();x.moveTo(cx,cy-r);x.quadraticCurveTo(cx,cy,cx+r,cy);x.quadraticCurveTo(cx,cy,cx,cy+r);x.quadraticCurveTo(cx,cy,cx-r,cy);x.quadraticCurveTo(cx,cy,cx,cy-r);x.fill();}
+function startLanes(){
+  if(anim)cancelAnimationFrame(anim);
+  const cv=$('lanes');const {x,w,h}=fit(cv);const L=state.o.lanes;const T=state.P.ttl;
+  const padL=8,padR=10,top=8,lh=(h-top-22)/L.length;const sx=m=>padL+(w-padL-padR)*m/T;
+  const t0=performance.now();const dur=reduce?0:2600;
+  function frame(now){
+    const prog=dur?Math.min(1,(now-t0)/dur):1;const tm=prog*T;
+    x.clearRect(0,0,w,h);
+    // dot grid backdrop
+    x.fillStyle='#E4E1D8';for(let gx=4;gx<w;gx+=10)for(let gy=4;gy<h-18;gy+=10)x.fillRect(gx,gy,1,1);
+    // axis
+    x.fillStyle='#333';x.font='11px "IBM Plex Mono", monospace';
+    const ticks=5;for(let i=0;i<=ticks;i++){const m=T*i/ticks;const px=sx(m);x.fillRect(px,h-18,1,4);x.textAlign=i===0?'left':i===ticks?'right':'center';x.fillText(Math.round(m)+'m',px,h-4);}
+    L.forEach((ln,i)=>{
+      const y=top+i*lh+lh/2;
+      // stipple bar for token time left
+      x.fillStyle='#bdb8ab';for(let px=sx(0);px<sx(ln.left);px+=3)x.fillRect(px,y-1,1.4,1.4);
+      // exposure window solid
+      const we=Math.min(ln.w,tm);x.fillStyle='#2F5BD3';x.fillRect(sx(0),y-2.5,Math.max(1.5,sx(we)-sx(0)),5);
+      if(ln.pushed&&tm>=ln.w){sparkle(x,sx(ln.w)+5,y,5,'#2F5BD3');}
+      ln.pts.forEach(([t,s])=>{if(t<=tm){if(s){x.fillStyle='#C2185B';x.beginPath();x.moveTo(sx(t),y-6);x.lineTo(sx(t)+5,y);x.lineTo(sx(t),y+6);x.lineTo(sx(t)-5,y);x.fill();}else{x.fillStyle='#111';x.beginPath();x.arc(sx(t),y,3,0,7);x.fill();}}});
+      if(!ln.active){x.fillStyle='#8a8a8a';x.font='10px "IBM Plex Mono", monospace';x.textAlign='right';x.fillText('idle',w-padR,y+3);}
+    });
+    // playhead
+    if(prog<1){x.strokeStyle='#C2185B';x.setLineDash([3,3]);x.beginPath();x.moveTo(sx(tm),top);x.lineTo(sx(tm),h-20);x.stroke();x.setLineDash([]);anim=requestAnimationFrame(frame);}
+  }
+  anim=requestAnimationFrame(frame);
+}
+function drawHist(){
+  const cv=$('hist');const {x,w,h}=fit(cv);const T=state.P.ttl;const s=state.o.sorted;
+  const bins=Math.max(12,Math.min(40,Math.floor(w/14)));const cnt=new Array(bins).fill(0);
+  s.forEach(v=>{cnt[Math.min(bins-1,Math.floor(v/T*bins))]++;});
+  const bw=(w-16)/bins;const r=Math.max(1.4,Math.min(3,bw/5));const rows=Math.floor((h-30)/(r*2.4));const srt=cnt.slice().sort((a,b)=>b-a);const per=Math.max(1,Math.ceil((srt[1]||srt[0])/rows*1.05));
+  x.clearRect(0,0,w,h);
+  cnt.forEach((c,i)=>{const full=Math.ceil(c/per);const n=Math.min(full,rows);if(full>rows){x.fillStyle='#2F5BD3';x.font='600 10px "IBM Plex Mono", monospace';x.textAlign='left';x.fillText('↑ '+c.toLocaleString(),8+i*bw+bw/2+r+2,12);}for(let j=0;j<n;j++){x.fillStyle=(i+.5)*T/bins<=G.p90?'#2F5BD3':'#111';x.beginPath();x.arc(8+i*bw+bw/2,h-22-j*r*2.4-r,r,0,7);x.fill();}});
+  // p90 line
+  const px=8+(w-16)*Math.min(1,state.o.p90/T);x.strokeStyle='#C2185B';x.lineWidth=2;x.beginPath();x.moveTo(px,6);x.lineTo(px,h-20);x.stroke();
+  x.fillStyle='#C2185B';x.font='600 11px "IBM Plex Mono", monospace';x.textAlign=px>w-90?'right':'left';x.fillText(' P99 '+fmtMin(state.o.p90)+' ',px,16);
+  x.fillStyle='#333';x.font='11px "IBM Plex Mono", monospace';x.textAlign='left';x.fillText('0',8,h-4);x.textAlign='right';x.fillText(T+' min',w-8,h-4);
+  $('hlab').textContent='1 dot ≈ '+per+' removals';
+}
+let icdfTimer=null;
+function drawICDF(){
+  const svg=$('icdf');while(svg.firstChild)svg.removeChild(svg.firstChild);
+  const lam=state.P.r/60;const W=320,H=300,l=40,b=260,t=20,r=300;const xmax=Math.max(1,-Math.log(0.02)/lam);
+  const X=v=>l+(r-l)*Math.min(v,xmax)/xmax, Y=u=>b-(b-t)*u;
+  for(let gx=l;gx<=r;gx+=20)for(let gy=t;gy<=b;gy+=20){el('path',{d:`M${gx-2} ${gy}h4M${gx} ${gy-2}v4`,stroke:'#CFCDC6','stroke-width':1},svg);}
+  el('line',{x1:l,y1:b,x2:r,y2:b,stroke:'#111','stroke-width':1.5},svg);el('line',{x1:l,y1:t,x2:l,y2:b,stroke:'#111','stroke-width':1.5},svg);
+  let d='';for(let i=0;i<=80;i++){const u=i/80*0.98;const xv=-Math.log(1-u)/lam;d+=(i?'L':'M')+X(xv).toFixed(1)+' '+Y(u).toFixed(1);}
+  el('path',{d,fill:'none',stroke:'#2F5BD3','stroke-width':2.5},svg);
+  const tx=el('text',{x:l-6,y:t+4,'text-anchor':'end','font-size':11,'font-family':'IBM Plex Mono'},svg);tx.textContent='U=1';
+  const t2=el('text',{x:r,y:b+18,'text-anchor':'end','font-size':11,'font-family':'IBM Plex Mono'},svg);t2.textContent='gap until next query: '+xmax.toFixed(0)+' min →';
+  const t3=el('text',{x:l+8,y:t+14,'font-size':12,'font-family':'IBM Plex Mono',fill:'#2F5BD3'},svg);t3.textContent='x = −ln(1−U)/λ, λ='+state.P.r+'/hr';
+  const rng=mulberry32(state.P.seed);const dots=[];
+  for(let i=0;i<8;i++){const u=0.05+rng()*0.9;const xv=-Math.log(1-u)/lam;
+    const h1=el('line',{x1:l,y1:Y(u),x2:X(xv),y2:Y(u),stroke:'#C2185B','stroke-width':1,'stroke-dasharray':'2 3',opacity:.7},svg);
+    const v1=el('line',{x1:X(xv),y1:Y(u),x2:X(xv),y2:b,stroke:'#111','stroke-width':1,'stroke-dasharray':'2 3',opacity:.5},svg);
+    const c=el('circle',{cx:l,cy:Y(u),r:4,fill:'#C2185B'},svg);const e=el('circle',{cx:X(xv),cy:b,r:3.5,fill:'#111'},svg);dots.push({u,xv,c,h1,v1,e});}
+  if(icdfTimer){clearInterval(icdfTimer);icdfTimer=null;}
+  if(reduce)return;
+  let ph=0;icdfTimer=setInterval(()=>{ph=(ph+0.02)%1.6;dots.forEach((dd,i)=>{const p=Math.max(0,Math.min(1,ph*1.4-i*0.08));const xx=l+(X(dd.xv)-l)*p;dd.c.setAttribute('cx',xx.toFixed(1));dd.e.setAttribute('opacity',p>=1?1:0.15);});},40);
+}
+
+/* ---------- wire ---------- */
+let deb=null;['ttl','push','q','r','pf','seed'].forEach(id=>$(id).addEventListener('input',()=>{clearTimeout(deb);deb=setTimeout(run,60);}));
+$('rerun').addEventListener('click',()=>{$('seed').value=1+Math.floor(Math.random()*999);run();});
+$('best').addEventListener('click',()=>{if(state&&state.best){$('ttl').value=state.best.t;run();}else{$('push').checked=true;run();}});
+let rz=null;window.addEventListener('resize',()=>{clearTimeout(rz);rz=setTimeout(()=>{if(state){drawHist();startLanes();}},120);});
+run();
+})();
+</script>
+</body>
+</html>
